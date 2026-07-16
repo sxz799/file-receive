@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  file-receive:
+    build: .
+    image: file-receive
+    container_name: file-receive
+    ports:
+      - "8080:8080"
+    volumes:
+      - file-receive-data:/uploads
+    environment:
+      - PORT=8080
+      - UPLOAD_DIR=/uploads
+    restart: unless-stopped
+
+volumes:
+  file-receive-data:
