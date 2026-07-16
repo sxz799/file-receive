@@ -1,10 +1,11 @@
 # 文件接收服务
 
-一个基于 Go + Gin 的简单 Web 文件接收服务，只提供后端接口。
+一个基于 Go + Gin 的简单 Web 文件接收服务，同时提供后端接口和静态 Web 界面。
 
 ## 功能特性
 
 - 单文件上传接口
+- 静态文件服务
 - 带进度的文件上传接口
 - SSE (Server-Sent Events) 实时进度推送
 - 可配置的上传目录
@@ -62,6 +63,10 @@ go build -o file-receive.exe
 $env:PORT = "8080"; $env:UPLOAD_DIR = "./uploads"; .\file-receive.exe
 ```
 
+### 访问 Web 界面
+
+打开浏览器访问 `http://localhost:8080` 即可使用文件上传功能。
+
 ## API 接口
 
 ### 1. 健康检查
@@ -69,6 +74,7 @@ $env:PORT = "8080"; $env:UPLOAD_DIR = "./uploads"; .\file-receive.exe
 **接口：** `GET /health`
 
 **响应示例：**
+
 ```json
 {
   "status": "ok"
@@ -85,72 +91,77 @@ $env:PORT = "8080"; $env:UPLOAD_DIR = "./uploads"; .\file-receive.exe
 - `file` (必填): 要上传的文件
 
 **响应示例（成功）：**
+
 ```json
 {
   "message": "文件上传成功",
-  "filename": "example.txt",
-  "path": "./uploads/example.txt"
+  "record": {
+    "id": "rec-1",
+    "filename": "example.txt",
+    "size": 1024,
+    "path": "./uploads/example.txt",
+    "uploaded_at": "2026-07-16T12:00:00Z"
+  }
 }
 ```
 
 **响应示例（失败）：**
+
 ```json
 {
   "error": "请选择要上传的文件"
 }
 ```
 
-### 3. 带进度的文件上传
+### 3. 获取已上传文件记录
 
-**接口：** `POST /upload/progress`
+**接口：** `GET /api/records`
 
-**请求类型：** `multipart/form-data`
+**响应示例：**
 
-**参数：**
-- `file` (必填): 要上传的文件
-
-**响应示例（成功）：**
 ```json
 {
-  "message": "文件上传成功",
-  "filename": "example.txt",
-  "path": "./uploads/example.txt"
-}
-```
-
-**响应示例（失败）：**
-```json
-{
-  "error": "请选择要上传的文件"
+  "records": [
+    {
+      "id": "rec-1",
+      "filename": "example.txt",
+      "size": 1024,
+      "path": "./uploads/example.txt",
+      "uploaded_at": "2026-07-16T12:00:00Z"
+    }
+  ]
 }
 ```
 
 ### 4. SSE 实时进度推送
 
-**接口：** `GET /upload/progress/sse`
+**接口：** `GET /api/progress/sse`
 
 **响应类型：** `text/event-stream`
 
-**说明：** 使用 SSE 技术实时推送上传进度
+**说明：** 使用 SSE 技术实时推送上传进度。当文件上传到 `/upload` 接口时，此接口会实时推送进度信息。
 
 **事件类型：**
 - `progress`: 上传进度更新
 - `done`: 上传完成
 
 **SSE 数据格式：**
+
 ```json
 {
   "filename": "example.txt",
   "total": 1024000,
   "current": 512000,
   "percent": 50,
-  "done": false
+  "done": false,
+  "error": ""
 }
 ```
 
 **使用示例（JavaScript）：**
+
 ```javascript
-const eventSource = new EventSource('http://localhost:8080/upload/progress/sse');
+const eventSource = new EventSource('http://localhost:8080/api/progress/sse');
 
 eventSource.addEventListener('progress', (event) => {
   const data = JSON.parse(event.data);
@@ -171,26 +182,30 @@ eventSource.onerror = (err) => {
 
 ## 命令使用方式
 
-### 使用 curl 上传文件
+### 使用 curl
 
-**简单上传：**
+#### 文件上传
+
 ```bash
 curl -X POST -F "file=@/path/to/your/file.txt" http://localhost:8080/upload
 ```
 
-**带进度上传：**
+#### 获取文件记录
+
 ```bash
-curl -X POST -F "file=@/path/to/your/file.txt" http://localhost:8080/upload/progress
+curl http://localhost:8080/api/records
 ```
 
-**监听 SSE 进度：**
+#### 监听 SSE 进度
+
 ```bash
-curl -N http://localhost:8080/upload/progress/sse
+curl -N http://localhost:8080/api/progress/sse
 ```
 
-### 使用 PowerShell 上传文件
+### 使用 PowerShell
 
-**简单上传：**
+#### 文件上传
+
 ```powershell
 $uri = "http://localhost:8080/upload"
 $filePath = "D:\path\to\your\file.txt"
@@ -198,17 +213,16 @@ $form = @{ file = Get-Item -Path $filePath }
 Invoke-RestMethod -Uri $uri -Method Post -Form $form
 ```
 
-**带进度上传：**
+#### 获取文件记录
+
 ```powershell
-$uri = "http://localhost:8080/upload/progress"
-$filePath = "D:\path\to\your\file.txt"
-$form = @{ file = Get-Item -Path $filePath }
-Invoke-RestMethod -Uri $uri -Method Post -Form $form
+Invoke-RestMethod -Uri "http://localhost:8080/api/records" -Method Get
 ```
 
-**监听 SSE 进度：**
+#### 监听 SSE 进度
+
 ```powershell
-$uri = "http://localhost:8080/upload/progress/sse"
+$uri = "http://localhost:8080/api/progress/sse"
 $client = New-Object System.Net.Http.HttpClient
 $client.Timeout = [System.TimeSpan]::FromMinutes(30)
 $response = $client.GetAsync($uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
@@ -225,7 +239,7 @@ while ($null -ne ($line = $reader.ReadLine())) {
 
 ### 使用 Postman
 
-#### 简单上传
+#### 文件上传
 
 1. 新建 POST 请求到 `http://localhost:8080/upload`
 2. 选择 Body 标签
@@ -233,20 +247,16 @@ while ($null -ne ($line = $reader.ReadLine())) {
 4. Key 填 `file`，类型选择 File，然后选择要上传的文件
 5. 点击 Send
 
-#### 带进度上传
+#### 获取文件记录
 
-1. 新建 POST 请求到 `http://localhost:8080/upload/progress`
-2. 选择 Body 标签
-3. 选择 form-data
-4. Key 填 `file`，类型选择 File，然后选择要上传的文件
-5. 点击 Send
+1. 新建 GET 请求到 `http://localhost:8080/api/records`
+2. 点击 Send
 
 #### 监听 SSE 进度
 
-1. 新建 GET 请求到 `http://localhost:8080/upload/progress/sse`
+1. 新建 GET 请求到 `http://localhost:8080/api/progress/sse`
 2. 发送请求
 3. 可以在响应中看到实时更新的进度数据
-
 ## 环境变量
 
 | 变量名 | 默认值 | 说明 |
@@ -261,6 +271,7 @@ file-receive/
 ├── main.go         # 主程序文件
 ├── go.mod          # Go 模块文件
 ├── go.sum          # 依赖锁定文件
+├── static/         # 静态文件目录，包含 index.html 等
 ├── .gitignore      # Git 忽略文件
 └── README.md       # 项目说明文档
 ```

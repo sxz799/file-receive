@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件接收服务</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+
+        .upload-section {
+            text-align: center;
+        }
+
+        .drop-zone {
+            border: 3px dashed #667eea;
+            border-radius: 12px;
+            padding: 60px 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+
+        .drop-zone:hover,
+        .drop-zone.dragover {
+            background: #f0f4ff;
+            border-color: #764ba2;
+        }
+
+        .drop-zone-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .drop-zone-text {
+            font-size: 1.2rem;
+            color: #555;
+            margin-bottom: 10px;
+        }
+
+        .drop-zone-hint {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .selected-file {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .selected-file.show {
+            display: flex;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .file-icon {
+            font-size: 2rem;
+        }
+
+        .file-details {
+            text-align: left;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .file-size {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .remove-btn {
+            background: none;
+            border: none;
+            color: #dc3545;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 5px;
+        }
+
+        .upload-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .upload-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .upload-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .progress-section {
+            margin-top: 25px;
+            display: none;
+        }
+
+        .progress-section.show {
+            display: block;
+        }
+
+        .progress-bar-container {
+            background: #e9ecef;
+            border-radius: 20px;
+            height: 30px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .progress-text {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title-icon {
+            color: #667eea;
+        }
+
+        .records-list {
+            list-style: none;
+        }
+
+        .record-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            transition: background 0.2s;
+        }
+
+        .record-item:last-child {
+            border-bottom: none;
+        }
+
+        .record-item:hover {
+            background: #f8f9fa;
+        }
+
+        .record-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .record-icon {
+            font-size: 2rem;
+        }
+
+        .record-details {
+            text-align: left;
+        }
+
+        .record-name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .record-meta {
+            color: #888;
+            font-size: 0.85rem;
+            margin-top: 3px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        .status-message {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .status-message.show {
+            display: block;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        @media (max-width: 600px) {
+            header h1 {
+                font-size: 1.8rem;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .drop-zone {
+                padding: 40px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📁 文件接收服务</h1>
+            <p>上传文件，查看进度和历史记录</p>
+        </header>
+
+        <div class="card upload-section">
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone-icon">📤</div>
+                <div class="drop-zone-text">点击或拖拽文件到这里上传</div>
+                <div class="drop-zone-hint">支持所有文件类型</div>
+                <input type="file" id="fileInput" class="file-input">
+            </div>
+
+            <div class="selected-file" id="selectedFile">
+                <div class="file-info">
+                    <span class="file-icon">📄</span>
+                    <div class="file-details">
+                        <div class="file-name" id="fileName"></div>
+                        <div class="file-size" id="fileSize"></div>
+                    </div>
+                </div>
+                <button class="remove-btn" id="removeBtn">×</button>
+            </div>
+
+            <button class="upload-btn" id="uploadBtn" disabled>上传文件</button>
+
+            <div class="progress-section" id="progressSection">
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar">0%</div>
+                </div>
+                <div class="progress-text" id="progressText"></div>
+            </div>
+
+            <div class="status-message" id="statusMessage"></div>
+        </div>
+
+        <div class="card records-section">
+            <div class="section-title">
+                <span class="section-title-icon">📋</span>
+                上传历史
+            </div>
+            <ul class="records-list" id="recordsList"></ul>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const selectedFile = document.getElementById('selectedFile');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const removeBtn = document.getElementById('removeBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const progressSection = document.getElementById('progressSection');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const statusMessage = document.getElementById('statusMessage');
+        const recordsList = document.getElementById('recordsList');
+
+        let selectedFileData = null;
+        let eventSource = null;
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleString('zh-CN');
+        }
+
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = 'status-message show ' + type;
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusMessage.classList.remove('show');
+                }, 3000);
+            }
+        }
+
+        function handleFileSelect(file) {
+            selectedFileData = file;
+            fileName.textContent = file.name;
+            fileSize.textContent = formatBytes(file.size);
+            selectedFile.classList.add('show');
+            uploadBtn.disabled = false;
+        }
+
+        function resetUpload() {
+            selectedFileData = null;
+            selectedFile.classList.remove('show');
+            uploadBtn.disabled = true;
+            progressSection.classList.remove('show');
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+        }
+
+        async function fetchRecords() {
+            try {
+                const response = await fetch('/api/records');
+                const data = await response.json();
+                renderRecords(data.records);
+            } catch (err) {
+                console.error('获取记录失败:', err);
+            }
+        }
+
+        function renderRecords(records) {
+            if (records.length === 0) {
+                recordsList.innerHTML = `
+                    <li class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div>暂无上传记录</div>
+                    </li>
+                `;
+                return;
+            }
+
+            recordsList.innerHTML = records.map(record => `
+                <li class="record-item">
+                    <div class="record-info">
+                        <span class="record-icon">📄</span>
+                        <div class="record-details">
+                            <div class="record-name">${escapeHtml(record.filename)}</div>
+                            <div class="record-meta">
+                                ${formatBytes(record.size)} · ${formatDate(record.uploaded_at)}
+                            </div>
+                        </div>
+                    </div>
+                </li>
+            `).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function uploadFile() {
+            if (!selectedFileData) return;
+
+            const formData = new FormData();
+            formData.append('file', selectedFileData);
+
+            uploadBtn.disabled = true;
+            progressSection.classList.add('show');
+            statusMessage.classList.remove('show');
+
+
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    showStatus('上传失败: ' + result.error, 'error');
+                } else {
+                    showStatus('上传成功: ' + result.record.filename, 'success');
+                    fetchRecords();
+                }
+            } catch (err) {
+                showStatus('上传失败: ' + err.message, 'error');
+            }
+
+            resetUpload();
+            uploadBtn.disabled = false;
+        }
+
+        // 事件监听
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFileSelect(e.dataTransfer.files[0]);
+            }
+        });
+
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            resetUpload();
+        });
+
+        uploadBtn.addEventListener('click', uploadFile);
+
+        function initSSEListener() {
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource('/api/progress/sse');
+
+            eventSource.addEventListener('progress', (event) => {
+                const data = JSON.parse(event.data);
+                const percent = Math.min(data.percent, 100);
+                progressBar.style.width = percent + '%';
+                progressBar.textContent = percent.toFixed(1) + '%';
+                progressText.textContent = `正在上传: ${escapeHtml(data.filename)} (${formatBytes(data.current)} / ${formatBytes(data.total)})`;
+                progressSection.classList.add('show'); // Ensure progress section is shown
+            });
+
+            eventSource.addEventListener('done', (event) => {
+                const data = JSON.parse(event.data);
+                progressBar.style.width = '100%';
+                progressBar.textContent = '100%';
+                progressText.textContent = `上传完成: ${escapeHtml(data.filename)}`;
+                showStatus('上传成功: ' + data.filename, 'success');
+                fetchRecords(); // Refresh records after upload is done
+                setTimeout(() => { // Hide progress after a short delay
+                    progressSection.classList.remove('show');
+                    progressBar.style.width = '0%';
+                    progressBar.textContent = '0%';
+                    progressText.textContent = '';
+                }, 2000);
+            });
+
+            eventSource.onerror = (err) => {
+                console.error('SSE 错误:', err);
+                eventSource.close();
+                // Optionally try to reconnect after a delay
+                // setTimeout(initSSEListener, 3000);
+            };
+        }
+
+        // 初始化
+        fetchRecords();
+        initSSEListener();
+    </script>
+</body>
+</html>

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,14 +16,26 @@ import (
 const (
 	defaultPort      = "8080"
 	defaultUploadDir = "./uploads"
+	staticDir        = "./static"
 )
 
+// UploadRecord 上传记录
+type UploadRecord struct {
+	ID         string    `json:"id"`
+	Filename   string    `json:"filename"`
+	Size       int64     `json:"size"`
+	Path       string    `json:"path"`
+	UploadedAt time.Time `json:"uploaded_at"`
+}
+
+// Progress 进度管理
 type Progress struct {
 	mu      sync.Mutex
 	clients map[string]chan<- UploadProgress
 	nextID  int
 }
 
+// UploadProgress 上传进度
 type UploadProgress struct {
 	Filename string  `json:"filename"`
 	Total    int64   `json:"total"`
@@ -30,6 +43,14 @@ type UploadProgress struct {
 	Percent  float64 `json:"percent"`
 	Done     bool    `json:"done"`
 	Error    string  `json:"error,omitempty"`
+}
+
+// AppState 应用状态
+type AppState struct {
+	mu           sync.Mutex
+	records      []UploadRecord
+	nextRecordID int
+	progress     *Progress
 }
 
 func NewProgress() *Progress {
@@ -69,9 +90,59 @@ func (p *Progress) Broadcast(progress UploadProgress) {
 	}
 }
 
+func NewAppState() *AppState {
+	return &AppState{
+		records:      make([]UploadRecord, 0),
+		nextRecordID: 1,
+		progress:     NewProgress(),
+	}
+}
+
+func (s *AppState) AddRecord(filename string, size int64, path string) UploadRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	record := UploadRecord{
+		ID:         fmt.Sprintf("rec-%d", s.nextRecordID),
+		Filename:   filename,
+		Size:       size,
+		Path:       path,
+		UploadedAt: time.Now(),
+	}
+
+	s.nextRecordID++
+	s.records = append(s.records, record)
+	return record
+}
+
+func (s *AppState) GetRecords() []UploadRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 返回副本，避免外部修改
+	records := make([]UploadRecord, len(s.records))
+	copy(records, s.records)
+	return records
+}
+
+func formatBytes(bytes int64) string {
+	if bytes == 0 {
+		return "0 B"
+	}
+	const k = 1024
+	sizes := []string{"B", "KB", "MB", "GB"}
+	i := 0
+	for ; bytes >= k && i < len(sizes)-1; i++ {
+		bytes /= k
+	}
+	return fmt.Sprintf("%d %s", bytes, sizes[i])
+}
+
 func main() {
+	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
-	progress := NewProgress()
+
+	state := NewAppState()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -87,33 +158,18 @@ func main() {
 		log.Fatalf("无法创建上传目录: %v", err)
 	}
 
-	r.POST("/upload", func(c *gin.Context) {
-		file, err := c.FormFile("file")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "请选择要上传的文件",
-			})
-			return
-		}
+	if err := os.MkdirAll(staticDir, 0755); err != nil {
+		log.Fatalf("无法创建静态目录: %v", err)
+	}
 
-		filename := filepath.Base(file.Filename)
-		dst := filepath.Join(uploadDir, filename)
-
-		if err := c.SaveUploadedFile(file, dst); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("文件保存失败: %v", err),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"message":  "文件上传成功",
-			"filename": filename,
-			"path":     dst,
-		})
+	// 静态文件服务
+	r.Static("/static", staticDir)
+	r.GET("/", func(c *gin.Context) {
+		c.File(filepath.Join(staticDir, "index.html"))
 	})
 
-	r.POST("/upload/progress", func(c *gin.Context) {
+	// 文件上传接口
+	r.POST("/upload", func(c *gin.Context) {
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "解析表单失败",
@@ -135,6 +191,14 @@ func main() {
 
 		out, err := os.Create(dst)
 		if err != nil {
+			state.progress.Broadcast(UploadProgress{
+				Filename: filename,
+				Total:    header.Size,
+				Current:  0,
+				Percent:  0,
+				Done:     false,
+				Error:    fmt.Sprintf("创建文件失败: %v", err),
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": fmt.Sprintf("创建文件失败: %v", err),
 			})
@@ -150,7 +214,7 @@ func main() {
 			n, err := file.Read(buf)
 			if n > 0 {
 				if _, writeErr := out.Write(buf[:n]); writeErr != nil {
-					progress.Broadcast(UploadProgress{
+					state.progress.Broadcast(UploadProgress{
 						Filename: filename,
 						Total:    totalSize,
 						Current:  current,
@@ -165,7 +229,7 @@ func main() {
 				}
 				current += int64(n)
 				percent := float64(current) / float64(totalSize) * 100
-				progress.Broadcast(UploadProgress{
+				state.progress.Broadcast(UploadProgress{
 					Filename: filename,
 					Total:    totalSize,
 					Current:  current,
@@ -177,7 +241,7 @@ func main() {
 				break
 			}
 			if err != nil {
-				progress.Broadcast(UploadProgress{
+				state.progress.Broadcast(UploadProgress{
 					Filename: filename,
 					Total:    totalSize,
 					Current:  current,
@@ -192,7 +256,10 @@ func main() {
 			}
 		}
 
-		progress.Broadcast(UploadProgress{
+		// 添加记录
+		record := state.AddRecord(filename, totalSize, dst)
+
+		state.progress.Broadcast(UploadProgress{
 			Filename: filename,
 			Total:    totalSize,
 			Current:  current,
@@ -201,15 +268,27 @@ func main() {
 		})
 
 		c.JSON(http.StatusOK, gin.H{
-			"message":  "文件上传成功",
-			"filename": filename,
-			"path":     dst,
+			"message": "文件上传成功",
+			"record":  record,
 		})
 	})
 
-	r.GET("/upload/progress/sse", func(c *gin.Context) {
-		id, ch := progress.AddClient()
-		defer progress.RemoveClient(id)
+	// 获取历史记录
+	r.GET("/api/records", func(c *gin.Context) {
+		records := state.GetRecords()
+		// 反转记录，最新的在最前面
+		for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
+			records[i], records[j] = records[j], records[i]
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"records": records,
+		})
+	})
+
+	// SSE 进度推送
+	r.GET("/api/progress/sse", func(c *gin.Context) {
+		id, ch := state.progress.AddClient()
+		defer state.progress.RemoveClient(id)
 
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -235,6 +314,7 @@ func main() {
 		})
 	})
 
+	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status": "ok",
@@ -243,10 +323,7 @@ func main() {
 
 	log.Printf("服务已启动，监听端口: %s", port)
 	log.Printf("文件上传目录: %s", uploadDir)
-	log.Printf("健康检查: http://localhost:%s/health", port)
-	log.Printf("简单上传: http://localhost:%s/upload", port)
-	log.Printf("带进度上传: http://localhost:%s/upload/progress", port)
-	log.Printf("进度SSE: http://localhost:%s/upload/progress/sse", port)
+	log.Printf("访问地址: http://localhost:%s/", port)
 
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("服务启动失败: %v", err)
