@@ -520,6 +520,7 @@
             eventSource = new EventSource('/api/progress/sse');
 
             eventSource.addEventListener('progress', (event) => {
+                console.log('SSE Progress Event Received:', event.data); // Debug log
                 const data = JSON.parse(event.data);
                 const percent = Math.min(data.percent, 100);
                 progressBar.style.width = percent + '%';
@@ -529,6 +530,7 @@
             });
 
             eventSource.addEventListener('done', (event) => {
+                console.log('SSE Done Event Received:', event.data); // Debug log
                 const data = JSON.parse(event.data);
                 progressBar.style.width = '100%';
                 progressBar.textContent = '100%';
@@ -545,7 +547,7 @@
 
             eventSource.onerror = (err) => {
                 console.error('SSE 错误:', err);
-                eventSource.close();
+                // eventSource.close(); // Do not close, let it reconnect automatically
                 // Optionally try to reconnect after a delay
                 // setTimeout(initSSEListener, 3000);
             };
