@@ -537,7 +537,8 @@
                 ws.close();
             }
 
-            ws = new WebSocket(`ws://${window.location.host}/ws/upload-progress`);
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/upload-progress`);
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
