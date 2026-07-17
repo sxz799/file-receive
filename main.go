@@ -48,7 +48,12 @@ func main() {
 	}
 	r.StaticFS("/static", http.FS(subFS))
 	r.GET("/", func(c *gin.Context) {
-		c.FileFromFS("index.html", http.FS(subFS))
+		indexHTML, err := embeddedFiles.ReadFile("static/index.html")
+		if err != nil {
+			c.String(http.StatusInternalServerError, "Internal Server Error")
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
 	})
 
 	// API 路由
