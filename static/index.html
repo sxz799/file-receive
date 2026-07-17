@@ -457,26 +457,43 @@
 
 
 
-            try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+            const xhr = new XMLHttpRequest();
 
-                const result = await response.json();
+            xhr.open('POST', '/upload', true);
 
-                if (result.error) {
-                    showStatus('上传失败: ' + result.error, 'error');
-                } else {
-                    showStatus('上传成功: ' + result.record.filename, 'success');
-                    fetchRecords();
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    progressBar.style.width = percentComplete + '%';
+                    progressText.textContent = Math.round(percentComplete) + '%';
                 }
-            } catch (err) {
-                showStatus('上传失败: ' + err.message, 'error');
-            }
+            };
 
-            resetUpload();
-            uploadBtn.disabled = false;
+            xhr.onload = () => {
+                progressSection.classList.remove('show');
+                if (xhr.status === 200) {
+                    const result = JSON.parse(xhr.responseText);
+                    if (result.error) {
+                        showStatus('上传失败: ' + result.error, 'error');
+                    } else {
+                        showStatus('文件上传成功: ' + result.record.filename, 'success');
+                        fetchRecords();
+                    }
+                } else {
+                    showStatus('上传失败: 服务器错误 ' + xhr.status, 'error');
+                }
+                resetUpload();
+                uploadBtn.disabled = false;
+            };
+
+            xhr.onerror = () => {
+                progressSection.classList.remove('show');
+                showStatus('上传失败: 网络错误', 'error');
+                resetUpload();
+                uploadBtn.disabled = false;
+            };
+
+            xhr.send(formData);
         }
 
         // 事件监听
@@ -512,50 +529,63 @@
 
         uploadBtn.addEventListener('click', uploadFile);
 
-        function initSSEListener() {
-            if (eventSource) {
-                eventSource.close();
+
+        let ws;
+        function initWSListener() {
+            if (ws) {
+                ws.close();
             }
 
-            eventSource = new EventSource('/api/progress/sse');
+            ws = new WebSocket(`ws://${window.location.host}/ws/upload-progress`);
 
-            eventSource.addEventListener('progress', (event) => {
-                console.log('SSE Progress Event Received:', event.data); // Debug log
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+            };
+
+            ws.onmessage = (event) => {
+                console.log('WS Message Received:', event.data); // Debug log
                 const data = JSON.parse(event.data);
                 const percent = Math.min(data.percent, 100);
                 progressBar.style.width = percent + '%';
                 progressBar.textContent = percent.toFixed(1) + '%';
                 progressText.textContent = `正在上传: ${escapeHtml(data.filename)} (${formatBytes(data.current)} / ${formatBytes(data.total)})`;
-                progressSection.classList.add('show'); // Ensure progress section is shown
-            });
+                progressSection.classList.add('show');
 
-            eventSource.addEventListener('done', (event) => {
-                console.log('SSE Done Event Received:', event.data); // Debug log
-                const data = JSON.parse(event.data);
-                progressBar.style.width = '100%';
-                progressBar.textContent = '100%';
-                progressText.textContent = `上传完成: ${escapeHtml(data.filename)}`;
-                showStatus('上传成功: ' + data.filename, 'success');
-                fetchRecords(); // Refresh records after upload is done
-                setTimeout(() => { // Hide progress after a short delay
+                if (data.done) {
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = '100%';
+                    progressText.textContent = `上传完成: ${escapeHtml(data.filename)}`;
+                    showStatus('上传成功: ' + data.filename, 'success');
+                    fetchRecords();
+                    setTimeout(() => {
+                        progressSection.classList.remove('show');
+                        progressBar.style.width = '0%';
+                        progressBar.textContent = '0%';
+                        progressText.textContent = '';
+                    }, 2000);
+                } else if (data.error) {
+                    showStatus('上传失败: ' + data.error, 'error');
                     progressSection.classList.remove('show');
                     progressBar.style.width = '0%';
                     progressBar.textContent = '0%';
                     progressText.textContent = '';
-                }, 2000);
-            });
+                }
+            };
 
-            eventSource.onerror = (err) => {
-                console.error('SSE 错误:', err);
-                // eventSource.close(); // Do not close, let it reconnect automatically
-                // Optionally try to reconnect after a delay
-                // setTimeout(initSSEListener, 3000);
+            ws.onclose = () => {
+                console.log('WebSocket disconnected. Attempting to reconnect...');
+                setTimeout(initWSListener, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error('WebSocket Error:', err);
+                ws.close(); // Close to trigger onclose and reconnect
             };
         }
 
         // 初始化
         fetchRecords();
-        initSSEListener();
+        initWSListener();
     </script>
 </body>
 </html>

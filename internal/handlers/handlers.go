@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 
 	"file-receive/internal/appstate"
 	"file-receive/internal/models"
@@ -134,34 +135,44 @@ func GetRecordsHandler(state *appstate.AppState) gin.HandlerFunc {
 	}
 }
 
-// SSEProgressHandler SSE 进度推送
-func SSEProgressHandler(state *appstate.AppState) gin.HandlerFunc {
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins for now
+	},
+}
+
+// WSProgressHandler WebSocket 进度推送
+func WSProgressHandler(state *appstate.AppState) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			fmt.Printf("Failed to set websocket upgrade: %v\n", err)
+			return
+		}
+		defer conn.Close()
+
 		id, ch := state.Progress.AddClient()
 		defer state.Progress.RemoveClient(id)
 
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Writer.Header().Set("Cache-Control", "no-cache")
-		c.Writer.Header().Set("Connection", "keep-alive")
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-
-		c.Stream(func(w io.Writer) bool {
+		for {
 			select {
 			case p, ok := <-ch:
 				if !ok {
-					return false
+					// Channel closed, client removed
+					return
+				}
+				// Send progress over websocket
+				if err := conn.WriteJSON(p); err != nil {
+					fmt.Printf("Error writing JSON to websocket: %v\n", err)
+					return
 				}
 				if p.Done {
-					c.SSEvent("progress", p)
-					c.SSEvent("done", p)
-					return false
+					return
 				}
-				c.SSEvent("progress", p)
-				return true
-			case <-c.Writer.CloseNotify():
-				return false
 			}
-		})
+		}
 	}
 }
 

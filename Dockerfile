@@ -25,7 +25,7 @@ WORKDIR /root/
 
 # 从构建阶段复制编译好的二进制文件
 COPY --from=builder /app/file-receive .
-COPY static/ ./static/
+
 
 # 声明端口
 EXPOSE 8080
