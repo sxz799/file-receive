@@ -156,21 +156,14 @@ func WSProgressHandler(state *appstate.AppState) gin.HandlerFunc {
 		id, ch := state.Progress.AddClient()
 		defer state.Progress.RemoveClient(id)
 
-		for {
-			select {
-			case p, ok := <-ch:
-				if !ok {
-					// Channel closed, client removed
-					return
-				}
-				// Send progress over websocket
-				if err := conn.WriteJSON(p); err != nil {
-					fmt.Printf("Error writing JSON to websocket: %v\n", err)
-					return
-				}
-				if p.Done {
-					return
-				}
+		for p := range ch {
+			// Send progress over websocket
+			if err := conn.WriteJSON(p); err != nil {
+				fmt.Printf("Error writing JSON to websocket: %v\n", err)
+				return
+			}
+			if p.Done {
+				return // Exit if done
 			}
 		}
 	}
