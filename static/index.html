@@ -593,7 +593,7 @@
         const scriptCopyBtn = document.getElementById('scriptCopyBtn');
         const origin = window.location.origin;
         usageCommand.textContent = `curl -X POST -F "file=@/path/to/your/file.txt" ${origin}/upload`;
-        scriptCommand.textContent = `curl -s ${origin}/api/download-script | bash`;
+        scriptCommand.textContent = `curl -o upload.sh -s ${origin}/api/download-script && bash upload.sh`;
 
         function copyText(text) {
             if (navigator.clipboard && window.isSecureContext) {

@@ -232,7 +232,10 @@ while true; do
 
     echo ""
     echo "请选择要上传的文件编号 (1-${count})，输入 q 退出，输入 r 重新列出:"
-    read -r -p "> " choice
+    if ! read -r -p "> " choice; then
+        echo "输入结束，退出。"
+        exit 0
+    fi
 
     case "$choice" in
         q|Q|quit|exit)
@@ -270,7 +273,7 @@ while true; do
 
     echo ""
     echo "按 Enter 继续..."
-    read -r -p ""
+    read -r -p "" || exit 0
 done
 `
 
