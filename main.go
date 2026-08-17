@@ -59,6 +59,7 @@ func main() {
 	// API 路由
 	r.POST("/upload", handlers.UploadFileHandler(state, uploadDir))
 	r.GET("/api/records", handlers.GetRecordsHandler(state))
+	r.GET("/api/download-script", handlers.DownloadScriptHandler())
 	r.GET("/ws/upload-progress", handlers.WSProgressHandler(state))
 	r.GET("/health", handlers.HealthCheckHandler())
 

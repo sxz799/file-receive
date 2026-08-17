@@ -285,6 +285,45 @@
             color: #721c24;
         }
 
+        .usage-desc {
+            color: #666;
+            margin-bottom: 15px;
+        }
+
+        .code-block {
+            background: #1e1e2e;
+            border-radius: 8px;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+        }
+
+        .code-block code {
+            color: #e6e6e6;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: opacity 0.2s;
+        }
+
+        .copy-btn:hover {
+            opacity: 0.85;
+        }
+
         @media (max-width: 600px) {
             header h1 {
                 font-size: 1.8rem;
@@ -336,6 +375,23 @@
             </div>
 
             <div class="status-message" id="statusMessage"></div>
+        </div>
+
+        <div class="card usage-section">
+            <div class="section-title">
+                <span class="section-title-icon">📖</span>
+                使用说明
+            </div>
+            <p class="usage-desc">在 Linux 终端粘贴以下命令，即可下载并运行上传脚本：</p>
+            <div class="code-block">
+                <code id="scriptCommand"></code>
+                <button class="copy-btn" id="scriptCopyBtn">复制</button>
+            </div>
+            <p class="usage-desc">也可以通过命令行上传文件：</p>
+            <div class="code-block">
+                <code id="usageCommand"></code>
+                <button class="copy-btn" id="copyBtn">复制</button>
+            </div>
         </div>
 
         <div class="card records-section">
@@ -529,6 +585,54 @@
         });
 
         uploadBtn.addEventListener('click', uploadFile);
+
+        // 使用说明：动态生成命令（URL 取自当前地址）
+        const usageCommand = document.getElementById('usageCommand');
+        const copyBtn = document.getElementById('copyBtn');
+        const scriptCommand = document.getElementById('scriptCommand');
+        const scriptCopyBtn = document.getElementById('scriptCopyBtn');
+        const origin = window.location.origin;
+        usageCommand.textContent = `curl -X POST -F "file=@/path/to/your/file.txt" ${origin}/upload`;
+        scriptCommand.textContent = `curl -s ${origin}/api/download-script | bash`;
+
+        function copyText(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                return navigator.clipboard.writeText(text);
+            }
+            // 兼容非安全上下文（非 https）环境
+            return new Promise((resolve, reject) => {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    resolve();
+                } catch (err) {
+                    document.body.removeChild(textarea);
+                    reject(err);
+                }
+            });
+        }
+
+        function bindCopyButton(btn, getText) {
+            btn.addEventListener('click', () => {
+                copyText(getText()).then(() => {
+                    btn.textContent = '已复制';
+                    setTimeout(() => { btn.textContent = '复制'; }, 2000);
+                }).catch((err) => {
+                    console.error('复制失败:', err);
+                    btn.textContent = '复制失败';
+                    setTimeout(() => { btn.textContent = '复制'; }, 2000);
+                });
+            });
+        }
+
+        bindCopyButton(copyBtn, () => usageCommand.textContent);
+        bindCopyButton(scriptCopyBtn, () => scriptCommand.textContent);
 
 
         let ws;

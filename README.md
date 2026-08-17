@@ -7,7 +7,7 @@
 - 单文件上传接口
 - 静态文件服务
 - 带进度的文件上传接口
-- SSE (Server-Sent Events) 实时进度推送
+- WebSocket 实时进度推送
 - 可配置的上传目录
 - 可配置的监听端口
 - 健康检查接口
@@ -133,19 +133,13 @@ $env:PORT = "8080"; $env:UPLOAD_DIR = "./uploads"; .\file-receive.exe
 }
 ```
 
-### 4. SSE 实时进度推送
+### 4. WebSocket 实时进度推送
 
-**接口：** `GET /api/progress/sse`
+**接口：** `GET /ws/upload-progress`
 
-**响应类型：** `text/event-stream`
+**说明：** 使用 WebSocket 技术实时推送上传进度。当文件上传到 `/upload` 接口时，此接口会向所有连接的客户端推送进度信息。当收到 `done: true` 的进度消息后，服务端会自动断开连接。
 
-**说明：** 使用 SSE 技术实时推送上传进度。当文件上传到 `/upload` 接口时，此接口会实时推送进度信息。
-
-**事件类型：**
-- `progress`: 上传进度更新
-- `done`: 上传完成
-
-**SSE 数据格式：**
+**数据格式（每条消息为一个 JSON 对象）：**
 
 ```json
 {
@@ -161,22 +155,20 @@ $env:PORT = "8080"; $env:UPLOAD_DIR = "./uploads"; .\file-receive.exe
 **使用示例（JavaScript）：**
 
 ```javascript
-const eventSource = new EventSource('http://localhost:8080/api/progress/sse');
+const ws = new WebSocket('ws://localhost:8080/ws/upload-progress');
 
-eventSource.addEventListener('progress', (event) => {
+ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
   console.log(`上传进度: ${data.percent.toFixed(2)}%`);
-});
+  if (data.done) {
+    console.log('上传完成:', data.filename);
+    ws.close();
+  }
+};
 
-eventSource.addEventListener('done', (event) => {
-  const data = JSON.parse(event.data);
-  console.log('上传完成:', data.filename);
-  eventSource.close();
-});
-
-eventSource.onerror = (err) => {
-  console.error('SSE 错误:', err);
-  eventSource.close();
+ws.onerror = (err) => {
+  console.error('WebSocket 错误:', err);
+  ws.close();
 };
 ```
 
@@ -196,10 +188,12 @@ curl -X POST -F "file=@/path/to/your/file.txt" http://localhost:8080/upload
 curl http://localhost:8080/api/records
 ```
 
-#### 监听 SSE 进度
+#### 监听 WebSocket 进度
+
+`curl` 不支持 WebSocket 协议，推荐使用 [websocat](https://github.com/vi/websocat) 等工具监听：
 
 ```bash
-curl -N http://localhost:8080/api/progress/sse
+websocat ws://localhost:8080/ws/upload-progress
 ```
 
 ### 使用 PowerShell
@@ -219,22 +213,23 @@ Invoke-RestMethod -Uri $uri -Method Post -Form $form
 Invoke-RestMethod -Uri "http://localhost:8080/api/records" -Method Get
 ```
 
-#### 监听 SSE 进度
+#### 监听 WebSocket 进度
 
 ```powershell
-$uri = "http://localhost:8080/api/progress/sse"
-$client = New-Object System.Net.Http.HttpClient
-$client.Timeout = [System.TimeSpan]::FromMinutes(30)
-$response = $client.GetAsync($uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
-$stream = $response.Content.ReadAsStreamAsync().Result
-$reader = New-Object System.IO.StreamReader($stream)
+$uri = "ws://localhost:8080/ws/upload-progress"
+$ws = New-Object System.Net.WebSockets.ClientWebSocket
+$ws.ConnectAsync([System.Uri]$uri, [System.Threading.CancellationToken]::None).Wait()
+$buffer = New-Object byte[] 4096
 
-while ($null -ne ($line = $reader.ReadLine())) {
-    if ($line -match 'data:') {
-        $data = $line -replace 'data: ', ''
-        Write-Host $data
-    }
+while ($ws.State -eq 'Open') {
+    $segment = New-Object System.ArraySegment[byte] -ArgumentList (, $buffer)
+    $result = $ws.ReceiveAsync($segment, [System.Threading.CancellationToken]::None).Result
+    $text = [System.Text.Encoding]::UTF8.GetString($buffer, 0, $result.Count)
+    Write-Host $text
+    if ($text -match '"done":true') { break }
 }
+
+$ws.Dispose()
 ```
 
 ### 使用 Postman
@@ -252,11 +247,11 @@ while ($null -ne ($line = $reader.ReadLine())) {
 1. 新建 GET 请求到 `http://localhost:8080/api/records`
 2. 点击 Send
 
-#### 监听 SSE 进度
+#### 监听 WebSocket 进度
 
-1. 新建 GET 请求到 `http://localhost:8080/api/progress/sse`
-2. 发送请求
-3. 可以在响应中看到实时更新的进度数据
+1. 新建 WebSocket 请求，地址填 `ws://localhost:8080/ws/upload-progress`
+2. 点击 Connect
+3. 可以在响应区域看到实时更新的进度数据
 ## 环境变量
 
 | 变量名 | 默认值 | 说明 |
@@ -268,12 +263,19 @@ while ($null -ne ($line = $reader.ReadLine())) {
 
 ```
 file-receive/
-├── main.go         # 主程序文件
-├── go.mod          # Go 模块文件
-├── go.sum          # 依赖锁定文件
-├── static/         # 静态文件目录，包含 index.html 等
-├── .gitignore      # Git 忽略文件
-└── README.md       # 项目说明文档
+├── main.go                    # 主程序文件
+├── go.mod                     # Go 模块文件
+├── go.sum                     # 依赖锁定文件
+├── internal/                  # 内部包
+│   ├── appstate/              # 应用状态管理（上传记录存储 + 进度广播）
+│   ├── handlers/              # HTTP 请求处理器（上传、记录、WebSocket、健康检查）
+│   ├── models/                # 数据模型
+│   └── utils/                 # 工具函数
+├── static/                    # 静态文件目录，包含 index.html 等
+├── .gitignore                 # Git 忽略文件
+├── Dockerfile                 # Docker 构建文件
+├── docker-compose.yml         # Docker Compose 配置
+└── README.md                  # 项目说明文档
 ```
 
 ## 技术栈
